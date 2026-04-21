@@ -23,6 +23,8 @@ runs:
 
     - name: Download Manifest Archives (Parallel)
       shell: python
+      env:
+        PYTHONUNBUFFERED: "1"
       working-directory: ${{ inputs.source_location }}
       run: |
         import xml.etree.ElementTree as ET
