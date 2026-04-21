@@ -29,8 +29,10 @@ runs:
         import subprocess
         import os, shutil
         
-        tree = ET.parse('manifest.xml')
-        root = tree.getroot()
+        with open('manifest.xml', 'r') as f:
+            manifest_content = f.read()
+        
+        root = ET.fromstring(manifest_content)
         top_dir = os.getcwd()
         
         remotes = {r.get('name'): r.get('fetch').rstrip('/') for r in root.findall('remote')}
@@ -38,12 +40,19 @@ runs:
         def_remote = default.get('remote') if default is not None else None
         def_rev = default.get('revision') if default is not None else None
         
-        for project in root.findall('project'):
+        projects = root.findall('project')
+        projects.sort(key=lambda x: 1 if x.get('path', x.get('name')) in ["./", "."] else 0)
+        
+        for project in projects:
             name = project.get('name')
             path = project.get('path', name)
             remote_name = project.get('remote', def_remote)
             rev = project.get('revision', def_rev)
             base_url = remotes.get(remote_name)
+            
+            if not base_url:
+                print(f"Skipping {name}: No remote found.")
+                continue
             
             if "github.com" in base_url:
                 url = f"{base_url}/{name}/archive/{rev}.tar.gz"
@@ -51,11 +60,26 @@ runs:
             elif "googlesource.com" in base_url:
                 url = f"{base_url}/{name}/+archive/{rev}.tar.gz"
                 strip = ""
-            else: continue
+            elif "git.codelinaro.org" in base_url:
+                url = f"{base_url}/{name}/-/archive/{rev}.tar.gz"
+                strip = "--strip-components=1"
+            else:
+                continue
             
             print(f"Syncing: {name} -> {path}")
-            os.makedirs(path, exist_ok=True)
-            subprocess.run(f"curl -LfsS -retry 5 --retry-all-errors --retry-delay 5 {url} | tar -xz -C {path} {strip}", shell=True, check=True)
+            
+            if path not in ["./", "."]:
+                os.makedirs(path, exist_ok=True)
+            
+            try:
+                subprocess.run(
+                    f"curl -LfsS --retry 5 --connect-timeout 30 -m 900 '{url}' | tar -xz -C {path} {strip}", 
+                    shell=True, 
+                    check=True
+                )
+            except subprocess.CalledProcessError:
+                print(f"❌ Failed to sync {name}")
+                continue
             
             for child in project:
                 src_rel = child.get('src')
@@ -64,15 +88,11 @@ runs:
                 
                 src_path = os.path.join(top_dir, path, src_rel)
                 dest_path = os.path.join(top_dir, dest_rel)
-                
                 os.makedirs(os.path.dirname(dest_path), exist_ok=True)
                 
                 if child.tag == 'linkfile':
                     if os.path.lexists(dest_path): os.remove(dest_path)
                     rel_target = os.path.relpath(src_path, os.path.dirname(dest_path))
                     os.symlink(rel_target, dest_path)
-                    print(f"  [Link] {dest_rel} -> {src_rel}")
-                
                 elif child.tag == 'copyfile':
                     shutil.copy2(src_path, dest_path)
-                    print(f"  [Copy] {dest_rel} from {src_rel}")
