@@ -21,13 +21,34 @@ runs:
           curl --fail --show-error --location --proto '=https' "https://raw.githubusercontent.com/OnePlusOSS/kernel_manifest/refs/heads/$OP_BRANCH/$OP_MANIFEST" -o manifest.xml
         fi
 
-    - name: Download Manifest Archives
+    - name: Download Manifest Archives (Parallel)
       shell: python
       working-directory: ${{ inputs.source_location }}
       run: |
         import xml.etree.ElementTree as ET
         import subprocess
         import os, shutil
+        from concurrent.futures import ThreadPoolExecutor
+        
+        MAX_WORKERS = 8
+        
+        def sync_project(task):
+            name, path, url, strip = task
+            if path not in ["./", "."]:
+                os.makedirs(path, exist_ok=True)
+            
+            print(f"🚀 Syncing: {name} -> {path}")
+            try:
+                # Use a larger timeout for the heavy kernel/prebuilt archives
+                subprocess.run(
+                    f"curl -LfsS --retry 5 --connect-timeout 30 -m 900 '{url}' | tar -xz -C {path} {strip}", 
+                    shell=True, 
+                    check=True
+                )
+                return True
+            except subprocess.CalledProcessError:
+                print(f"❌ Failed to sync {name}")
+                return False
         
         with open('manifest.xml', 'r') as f:
             manifest_content = f.read()
@@ -40,19 +61,17 @@ runs:
         def_remote = default.get('remote') if default is not None else None
         def_rev = default.get('revision') if default is not None else None
         
-        projects = root.findall('project')
-        projects.sort(key=lambda x: 1 if x.get('path', x.get('name')) in ["./", "."] else 0)
+        sync_tasks = []
+        post_process_data = []
         
-        for project in projects:
+        for project in root.findall('project'):
             name = project.get('name')
             path = project.get('path', name)
             remote_name = project.get('remote', def_remote)
             rev = project.get('revision', def_rev)
             base_url = remotes.get(remote_name)
             
-            if not base_url:
-                print(f"Skipping {name}: No remote found.")
-                continue
+            if not base_url: continue
             
             if "github.com" in base_url:
                 url = f"{base_url}/{name}/archive/{rev}.tar.gz"
@@ -66,33 +85,33 @@ runs:
             else:
                 continue
             
-            print(f"Syncing: {name} -> {path}")
-            
-            if path not in ["./", "."]:
-                os.makedirs(path, exist_ok=True)
-            
-            try:
-                subprocess.run(
-                    f"curl -LfsS --retry 5 --connect-timeout 30 -m 900 '{url}' | tar -xz -C {path} {strip}", 
-                    shell=True, 
-                    check=True
-                )
-            except subprocess.CalledProcessError:
-                print(f"❌ Failed to sync {name}")
-                continue
+            sync_tasks.append((name, path, url, strip))
             
             for child in project:
-                src_rel = child.get('src')
-                dest_rel = child.get('dest')
-                if not src_rel or not dest_rel: continue
-                
-                src_path = os.path.join(top_dir, path, src_rel)
-                dest_path = os.path.join(top_dir, dest_rel)
-                os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-                
-                if child.tag == 'linkfile':
-                    if os.path.lexists(dest_path): os.remove(dest_path)
-                    rel_target = os.path.relpath(src_path, os.path.dirname(dest_path))
-                    os.symlink(rel_target, dest_path)
-                elif child.tag == 'copyfile':
-                    shutil.copy2(src_path, dest_path)
+                if child.tag in ['linkfile', 'copyfile']:
+                    post_process_data.append((path, child))
+        
+        print(f"Starting parallel sync of {len(sync_tasks)} projects...")
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            list(executor.map(sync_project, sync_tasks))
+        
+        print("Processing linkfiles and copyfiles...")
+        for path, child in post_process_data:
+            src_rel = child.get('src')
+            dest_rel = child.get('dest')
+            if not src_rel or not dest_rel: continue
+            
+            src_path = os.path.join(top_dir, path, src_rel)
+            dest_path = os.path.join(top_dir, dest_rel)
+            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+            
+            if child.tag == 'linkfile':
+                if os.path.lexists(dest_path): os.remove(dest_path)
+                rel_target = os.path.relpath(src_path, os.path.dirname(dest_path))
+                os.symlink(rel_target, dest_path)
+                print(f"  [Link] {dest_rel} -> {src_rel}")
+            elif child.tag == 'copyfile':
+                shutil.copy2(src_path, dest_path)
+                print(f"  [Copy] {dest_rel} from {src_rel}")
+        
+        print("Kernel Sync completed successfully.")
