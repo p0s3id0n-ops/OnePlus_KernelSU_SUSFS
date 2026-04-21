@@ -33,7 +33,7 @@ runs:
         import time
         from concurrent.futures import ThreadPoolExecutor
         
-        MAX_WORKERS = (os.cpu_count() or 2) * 8
+        MAX_WORKERS = (os.cpu_count() or 2) * 4
         
         def sync_project(task):
             name, path, url, strip = task
@@ -41,16 +41,20 @@ runs:
                 os.makedirs(path, exist_ok=True)
             
             print(f"🚀 Syncing: {name} -> {path}")
+            start_time = time.time()
+            print(f"  [PENDING] {name}")
             try:
                 # Use a larger timeout for the heavy kernel/prebuilt archives
                 subprocess.run(
-                    f"curl -LfsS --retry 5 --connect-timeout 30 -m 900 '{url}' | tar -xz -C {path} {strip}", 
+                    f"curl -LfsS --retry 5 --connect-timeout 30 -m 900 '{url}' | tar -I pigz -x -C {path} {strip}", 
                     shell=True, 
                     check=True
                 )
+                duration = time.time() - start_time
+                print(f"  [SUCCESS] Synced {name} ({duration:.2f}s)")
                 return True
-            except subprocess.CalledProcessError:
-                print(f"❌ Failed to sync {name}")
+            except:
+                print(f"  [ERROR] Failed to sync {name}")
                 return False
         
         global_start = time.time()
