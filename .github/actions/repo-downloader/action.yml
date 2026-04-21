@@ -33,7 +33,7 @@ runs:
         import time
         from concurrent.futures import ThreadPoolExecutor
         
-        MAX_WORKERS = (os.cpu_count() or 2) * 4
+        MAX_WORKERS = (os.cpu_count() or 2) * 8
         
         def sync_project(task):
             name, path, url, strip = task
@@ -98,7 +98,11 @@ runs:
         
         print(f"Starting parallel sync of {len(sync_tasks)} projects...")
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            list(executor.map(sync_project, sync_tasks))
+            success_list = list(executor.map(sync_project, sync_tasks))
+            
+            if not all(success_list):
+                print("::error::One or more projects failed to sync!")
+                exit(1)
         
         print("Processing linkfiles and copyfiles...")
         for path, child in post_process_data:
