@@ -318,7 +318,7 @@ runs:
 
     - name: Sync Kernel Source
       id: sync-kernel-source
-      uses: ./.github/actions/repo-downloader.yml
+      uses: ./.github/actions/repo-downloader/action.yml
       with:
         source_location: ${{ env.CONFIG }}
         manifest: ${{ env.OP_MANIFEST }}
