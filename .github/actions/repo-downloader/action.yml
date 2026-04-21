@@ -52,6 +52,8 @@ runs:
                 print(f"❌ Failed to sync {name}")
                 return False
         
+        global_start = time.time()
+        
         with open('manifest.xml', 'r') as f:
             manifest_content = f.read()
         
@@ -116,4 +118,8 @@ runs:
                 shutil.copy2(src_path, dest_path)
                 print(f"  [Copy] {dest_rel} from {src_rel}")
         
-        print("Kernel Sync completed successfully.")
+        
+        total_duration = time.time() - global_start
+        minutes = int(total_duration // 60)
+        seconds = total_duration % 60
+        print(f"Kernel Sync completed in {minutes}m {seconds:.2f}s")
