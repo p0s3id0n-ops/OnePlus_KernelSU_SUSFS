@@ -32,7 +32,7 @@ runs:
         import os, shutil
         from concurrent.futures import ThreadPoolExecutor
         
-        MAX_WORKERS = 8
+        MAX_WORKERS = (os.cpu_count() or 2) * 4
         
         def sync_project(task):
             name, path, url, strip = task
