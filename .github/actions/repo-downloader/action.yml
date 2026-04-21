@@ -5,14 +5,6 @@ inputs:
     description: 'Folder path to save Kernel source'
     required: true
     type: string
-  manifest:
-    description: 'Manifest to parse and download'
-    required: true
-    type: string
-  branch:
-    description: 'Branch where manifest exists'
-    required: true
-    type: string
 
 runs:
   using: 'composite'
@@ -21,12 +13,12 @@ runs:
       shell: bash
       working-directory: ${{ inputs.source_location }}
       run: |
-        if [[ "$manifest" == https://* ]]; then
-          curl --fail --show-error --location --proto '=https' "$manifest" -o manifest.xml
+        if [[ "$OP_MANIFEST" == https://* ]]; then
+          curl --fail --show-error --location --proto '=https' "$OP_MANIFEST" -o manifest.xml
         elif [[ "$OP_BRANCH" == wild/* ]]; then
-          cp "../manifests/$(echo "$OP_OS_VERSION" | tr '[:upper:]' '[:lower:]')/$manifest" manifest.xml
+          cp "../manifests/$(echo "$OP_OS_VERSION" | tr '[:upper:]' '[:lower:]')/$OP_MANIFEST" manifest.xml
         else
-          curl --fail --show-error --location --proto '=https' "https://raw.githubusercontent.com/OnePlusOSS/kernel_manifest/refs/heads/$branch/$manifest" -o manifest.xml
+          curl --fail --show-error --location --proto '=https' "https://raw.githubusercontent.com/OnePlusOSS/kernel_manifest/refs/heads/$OP_BRANCH/$OP_MANIFEST" -o manifest.xml
         fi
 
     - name: Download Manifest Archives

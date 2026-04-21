@@ -321,13 +321,6 @@ runs:
       uses: ./.github/actions/repo-downloader
       with:
         source_location: ${{ env.CONFIG }}
-        manifest: ${{ env.OP_MANIFEST }}
-        branch: ${{ env.OP_BRANCH }}
-        susfs_commit_hash_or_branch: ${{ matrix.susfs_resolved_hash }}
-        optimize_level: ${{ inputs.optimize_level }}
-        build_timestamp: ${{ inputs.build_timestamp }}
-        clean: ${{ inputs.clean_build }}
-        debug: ${{ inputs.debug }}
 
     - name: Set Dir Paths
       shell: bash
