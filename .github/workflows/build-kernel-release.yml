@@ -604,7 +604,7 @@ jobs:
 
       - name: 🔨 Build Kernel
         id: build
-        uses: ./.github/actions
+        uses: ./.github/actions/build-kernel-action.yml
         with:
           op_config_json: ${{ steps.prepare_config.outputs.config_json }}
           ksu_type: ${{ matrix.ksu_type }}
