@@ -35,10 +35,19 @@ runs:
         
         MAX_WORKERS = (os.cpu_count() or 2) * 4
         
+        
         def sync_project(task):
             name, path, url, strip = task
             if path not in ["./", "."]:
                 os.makedirs(path, exist_ok=True)
+            
+            headers = (
+                "-H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' "
+                "-H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8' "
+                "-H 'Accept-Encoding: gzip, deflate, br' "
+                "-H 'Connection: keep-alive' "
+                "--tcp-fastopen"
+            )
             
             print(f"🚀 Syncing: {name} -> {path}")
             start_time = time.time()
@@ -46,7 +55,7 @@ runs:
             try:
                 # Use a larger timeout for the heavy kernel/prebuilt archives
                 subprocess.run(
-                    f"curl -LfsS --retry 5 --connect-timeout 30 -m 900 '{url}' | tar -I pigz -x -C {path} {strip}", 
+                    f"curl -LfsS {headers} --retry 5 --connect-timeout 30 -m 900 '{url}' | tar -I pigz -x -C {path} {strip}", 
                     shell=True, 
                     check=True
                 )
