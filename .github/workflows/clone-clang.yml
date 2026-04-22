@@ -1,0 +1,117 @@
+name: Mirror clang to GitHub Release
+
+permissions:
+  contents: write
+
+on:
+  workflow_dispatch:
+
+jobs:
+  generate-mirror-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: configs/
+
+      - name: 🔍 Generate Mirror Matrix
+        id: generate-config
+        shell: bash
+        run: |
+          set -euo pipefail
+          
+          echo "[" > all_configs.json
+          mapfile -t files < <(find configs/ -name "*.json")
+          for i in "${!files[@]}"; do
+            cat "${files[$i]}" >> all_configs.json
+            [[ $((i+1)) -lt ${#files[@]} ]] && echo "," >> all_configs.json
+          done
+          echo "]" >> all_configs.json
+
+      - name: 🔍 Resolve Unique Projects
+        id: set-matrix
+        shell: python
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          import xml.etree.ElementTree as ET
+          import json
+          import os
+          import subprocess
+          import shutil
+          
+          with open('all_configs.json', 'r') as f:
+              configs = json.load(f)
+          
+          unique_clang = {}
+          
+          for cfg in configs:
+              op_branch = cfg.get('branch', '')
+              op_manifest = cfg.get('manifest', '')
+              op_os_version = cfg.get('os_version', '').lower()
+              
+              xml_file = "temp_manifest.xml"
+              
+              try:
+                  if op_manifest.startswith("https://"):
+                      subprocess.run(f"curl -LfsS {op_manifest} -o {xml_file}", shell=True, check=True)
+                  elif op_branch.startswith("wild/"):
+                      shutil.copy(f"manifests/{op_os_version}/{op_manifest}", xml_file)
+                  else:
+                      url = f"https://raw.githubusercontent.com/OnePlusOSS/kernel_manifest/refs/heads/{op_branch}/{op_manifest}"
+                      subprocess.run(f"curl -LfsS {url} -o {xml_file}", shell=True, check=True)
+                  
+                  root = ET.parse(xml_file).getroot()
+                  remotes = {r.get('name'): r.get('fetch').rstrip('/') for r in root.findall('remote')}
+                  default = root.find('default')
+                  def_remote = default.get('remote')
+                  def_rev = default.get('revision')
+                  
+                  for project in root.findall('project'):
+                      name = project.get('name')
+                      if "clang" in name.lower():
+                      remote_name = project.get('remote', def_remote)
+                      rev = project.get('revision', def_rev)
+                      base_url = remotes.get(remote_name, "")
+                      
+                      if rev not in unique_clang and ("git.codelinaro.org" in base_url or "googlesource.com" in base_url):
+                          if "googlesource.com" in base_url:
+                              dl_url = f"{base_url}/{name}/+archive/{rev}.tar.gz"
+                          else:
+                              dl_url = f"{base_url}/{name}/-/archive/{rev}.tar.gz"
+                          unique_clang[rev] = {"rev": rev, "url": dl_url, "name": name}
+              except Exception as e:
+                  print(f"⚠️ Failed to process {op_manifest}: {e}")
+          matrix = {"include": list(unique_clang.values())}
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"matrix={json.dumps(matrix)}\n")
+          print(f"✅ Found {len(unique_clang)} unique projects to mirror.")
+
+  mirror-to-release:
+    needs: generate-mirror-matrix
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.generate-mirror-matrix.outputs.matrix) }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: 🚀 Sync & Upload
+        run: |
+          gh release create "source-cache" --title "Source Mirror Cache" --draft 2>/dev/null || true
+          
+          # Check cache
+          HTTP_STATUS=$(curl -I -s -o /dev/null -w "%{http_code}" -L \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://github.com/${{ github.repository }}/releases/download/source-cache/${{ matrix.rev }}.tar.gz")
+          
+          if [ "$HTTP_STATUS" != "302" ] && [ "$HTTP_STATUS" != "200" ]; then
+            echo "📥 Downloading Clang: ${{ matrix.name }}..."
+            curl -LfsS -H 'User-Agent: Mozilla/5.0' --tcp-fastopen -o "${{ matrix.rev }}.tar.gz" "${{ matrix.url }}"
+            gh release upload "source-cache" "${{ matrix.rev }}.tar.gz" --clobber
+          else
+            echo "✅ Clang revision ${{ matrix.rev }} already cached."
+          fi

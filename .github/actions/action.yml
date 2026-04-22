@@ -1414,6 +1414,12 @@ runs:
           wild/sm8550|wild/sm7550)
             patch -p1 --forward < "$KERNEL_PATCHES_FOLDER/common/droidspaces/fix_sysvipc_kabi_1_2_3.patch"
             ;;
+          wild/sm8450|wild/sm8475|wild/mt6895|wild/mt6983|wild/mt6789)
+            patch -p1 --forward < "$KERNEL_PATCHES_FOLDER/common/droidspaces/fix_sysvipc_kabi_6_7_8.patch"
+            if [ "$ANDROID_VER" = "android12" ] && [ "$KERNEL_VER" = "5.10" ]; then
+              curl -Ls https://raw.githubusercontent.com/ravindu644/Droidspaces-OSS/refs/heads/main/Documentation/resources/kernel-patches/GKI/03.5.10_or_lower_use_android_abi_padding_for_posix_mqueue%20copy.patch | patch -p1 --forward
+            fi
+            ;;
           *)
             patch -p1 --forward < "$KERNEL_PATCHES_FOLDER/common/droidspaces/fix_sysvipc_kabi_6_7_8.patch"
             ;;
