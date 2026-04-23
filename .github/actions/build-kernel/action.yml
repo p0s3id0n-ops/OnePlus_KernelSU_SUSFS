@@ -1422,6 +1422,45 @@ runs:
         echo "Disabling GPUEB for MTK kernel 5.10"
         sed -i '/obj-y.*gpueb/d' "$COMMON_KERNEL_FOLDER/drivers/gpu/mediatek/Makefile"
 
+    - name: Test Midas
+      shell: bash
+      run: |
+        echo "Test Midas"
+        set -euo pipefail
+        cd "$COMMON_KERNEL_FOLDER"
+        mkdir -p drivers/soc/oplus
+        ln -s "$CONFIG_DIR/vendor/oplus/kernel/cpu/midas" "$COMMON_KERNEL_FOLDER/drivers/soc/oplus/midas"
+        
+        cat >> "$COMMON_KERNEL_FOLDER/drivers/soc/Kconfig" <<EOF
+        #ifdef OPLUS_FEATURE_MIDAS
+        source "drivers/soc/oplus/midas/Kconfig"
+        #endif /*OPLUS_FEATURE_MIDAS*/
+        endmenu
+        EOF
+        
+        if [ "${{ env.OP_RUST_BUILD}}" = "true" ]; then
+          cat >> "$COMMON_KERNEL_FOLDER/arch/arm64/configs/gki_defconfig" <<EOF
+          CONFIG_OPLUS_FEATURE_MIDAS=y
+          CONFIG_OPLUS_FEATURE_MIDAS_GKI=y
+          CONFIG_OPLUS_FEATURE_BINDER_STATS_ENABLE=y
+          CONFIG_CMDLINE="module_blacklist=rust_binder,oplus_bsp_midas"
+          CONFIG_CMDLINE_EXTEND=y
+          CONFIG_CMDLINE_FORCE=n
+        EOF
+        else
+          cat >> "$COMMON_KERNEL_FOLDER/arch/arm64/configs/gki_defconfig" <<EOF
+          CONFIG_OPLUS_FEATURE_MIDAS=y
+          CONFIG_OPLUS_FEATURE_MIDAS_GKI=y
+          CONFIG_OPLUS_FEATURE_BINDER_STATS_ENABLE=y
+          CONFIG_CMDLINE="module_blacklist=oplus_bsp_midas"
+          CONFIG_CMDLINE_EXTEND=y
+          CONFIG_CMDLINE_FORCE=n
+        EOF
+        fi
+        
+        ls -l drivers/soc/oplus/midas
+        ls drivers/soc/oplus/midas/Kconfig
+
     - name: Build Kernel
       shell: bash
       env:
